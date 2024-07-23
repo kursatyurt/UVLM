@@ -3,7 +3,7 @@
 #include <iostream>
 #include <vector>
 
-#include <matplot/matplot.h>
+// #include <matplot/matplot.h>
 
 Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const Eigen::Vector3d &> line, const Eigen::Vector3d &targetPoint)
 {
@@ -18,7 +18,7 @@ Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const 
   }
 
   // Calculate the induced velocity
-  return {M_PI_4 * r1.cross(r2) / (r1.cross(r2).squaredNorm()) * (r0.dot((r1 / r1.norm() - r2 / r2.norm())))};
+  return M_PI_4 * r1.cross(r2) / (r1.cross(r2).squaredNorm()) * (r0.dot((r1 / r1.norm() - r2 / r2.norm())));
 }
 
 struct Wing {
@@ -78,16 +78,17 @@ inline double deg2rad(double deg)
 int main()
 {
 
-  Eigen::Matrix3d rotation;
-  Eigen::VectorXd gamma_old;
-  for (unsigned angle = 0; angle < 25; angle++) {
+  for (int numPanels = 3; numPanels < 500; numPanels += 10) {
+    Eigen::Matrix3d rotation;
+    Eigen::VectorXd gamma_old;
+    const double    angle = -5;
 
     Wing wing;
 
     rotation = Eigen::AngleAxisd(deg2rad(angle), Eigen::Vector3d::UnitY());
 
-    for (int i = 0; i < 1000; i++) {
-      wing.addVertexCouple(rotation * Eigen::Vector3d{i/1.000, 0, 0}, rotation * Eigen::Vector3d{i/1.000, 1, 0});
+    for (int i = 0; i < numPanels; i++) {
+      wing.addVertexCouple(rotation * Eigen::Vector3d{i / 1.000, 0, 0}, rotation * Eigen::Vector3d{i / 1.000, 0.2, 0});
     }
 
     Eigen::MatrixXd AIC = Eigen::MatrixXd::Zero(wing.getPanelCount(), wing.getPanelCount());
@@ -110,8 +111,22 @@ int main()
       rhs[i] = -freestreamVelocity.dot(wing.normals[i]);
     //
     Eigen::VectorXd gamma = AIC.fullPivLu().solve(rhs);
-    std::cout << "Angle = " << angle << " lift " << std::endl;
-  }
 
+    // matplot::plot(gamma);
+    // matplot::hold(matplot::on);
+    // matplot::show();
+    std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
+    std::cout << "Angle = " << angle << " lift " << std::endl;
+
+    auto force = Eigen::Vector3d::Zero();
+
+    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+     const auto LE =  wing.getPanelVortexLine(i, 2);
+     const auto dx = LE.second - LE.first;
+     force += gamma[i] * dx.cross(wing.normals[i]);
+    }
+    std::cout << "Force = " << force.transpose() << std::endl;
+
+  }
   return 0;
 }

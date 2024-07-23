@@ -108,22 +108,24 @@ file(WRITE "${PROJECT_BINARY_DIR}/.gitignore" "*")
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 message(STATUS "CMake module path: ${CMAKE_MODULE_PATH}")
-include(CPM)
-CPMAddPackage(
-    NAME eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
-)
+# include(CPM)
+# CPMAddPackage(
+#     NAME eigen
+#     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+#     GIT_TAG 3.4.0
+# )
 
-# Add matplotlib-cpp package
-CPMAddPackage(
-  NAME matplotplusplus
-  GITHUB_REPOSITORY alandefreitas/matplotplusplus
-  GIT_TAG master
-)
+# # Add matplotlib-cpp package
+# CPMAddPackage(
+#   NAME matplotplusplus
+#   GITHUB_REPOSITORY alandefreitas/matplotplusplus
+#   GIT_TAG master
+# )
+
+add_subdirectory(thirdparty/eigen)
 
 
 add_executable(UVLM src/main.cpp)
 target_compile_options(UVLM PRIVATE ${COMPILER_FLAGS})
-target_link_libraries(UVLM PRIVATE Eigen3::Eigen Matplot++::matplot) 
+target_link_libraries(UVLM PRIVATE Eigen3::Eigen) 
 
