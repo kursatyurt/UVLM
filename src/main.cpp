@@ -1,8 +1,8 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <cassert>
 #include <iostream>
 #include <vector>
-#include <cassert>
 
 // #include <matplot/matplot.h>
 
@@ -15,11 +15,11 @@ Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const 
 
   // Check singularity condition
   if (r1.norm() < 1e-6 || r2.norm() < 1e-6 || r1.cross(r2).norm() < 1e-6) {
-    return Eigen::Vector3d::Zero();
+    std::exit(1);
   }
 
   // Calculate the induced velocity
-  return M_PI_4 * r1.cross(r2) / (r1.cross(r2).squaredNorm()) * (r0.dot((r1 / r1.norm() - r2 / r2.norm())));
+  return 0.25 / M_PI * r1.cross(r2) / (r1.cross(r2).squaredNorm()) * (r0.dot((r1 / r1.norm() - r2 / r2.norm())));
 }
 
 struct Wing {
@@ -75,10 +75,45 @@ inline double deg2rad(double deg)
 {
   return deg * M_PI / 180.0;
 }
+// https://csimaoferreira.github.io/Rotor-Wake-Aerodynamics-Lifting-Line/#/8
+
+void testVelocity()
+{
+  std::pair<Eigen::Vector3d, Eigen::Vector3d> line = {Eigen::Vector3d{0, 0, 0}, Eigen::Vector3d{0, 0, 1}};
+  Eigen::Vector3d                             targetPoint{0.0, 0.5, 0.5};
+  Eigen::Vector3d                             velocity = vortexLineUnitVelocity(line, targetPoint);
+  std::cout << "Velocity = " << velocity.transpose() << std::endl;
+  std::cout << "Expected = [-0.225, 0, 0]" << std::endl;
+
+  line = {Eigen::Vector3d{1.0, 0.0, 0.0}, Eigen::Vector3d{0.0, 1.0, 0.0}};
+  targetPoint = {0.0, 0.0, 1.0};
+  velocity = vortexLineUnitVelocity(line, targetPoint);
+  std::cout << "Velocity = " << velocity.transpose() << std::endl;
+  std::cout << "Expected = [0.038, 0.038, 0.038]" << std::endl;
+
+  line        = {Eigen::Vector3d{1.0, 0.0, 0.0}, Eigen::Vector3d{0.0, 1.0, 0.0}};
+  targetPoint = {0.5, 0.5, 0.5};
+  velocity    = vortexLineUnitVelocity(line, targetPoint);
+  std::cout << "Velocity = " << velocity.transpose() << std::endl;
+  std::cout << "Expected = [0.184, 0.184, 0.000]" << std::endl;
+
+  line        = {Eigen::Vector3d{1.0, 0.0, 1.0}, Eigen::Vector3d{0.0, 0.0, 1.0}};
+  targetPoint = {0.5, 0.5, 0.5};
+  velocity    = vortexLineUnitVelocity(line, targetPoint);
+  std::cout << "Velocity = " << velocity.transpose() << std::endl;
+  std::cout << "Expected = [0.000, -0.092, -0.092]" << std::endl;
+
+  line        = {Eigen::Vector3d{1.0, 0.0, 1.0}, Eigen::Vector3d{0.0, 0.0, 1.0}};
+  targetPoint = {1.5, 1.5, 1.5};
+  velocity    = vortexLineUnitVelocity(line, targetPoint);
+  std::cout << "Velocity = " << velocity.transpose() << std::endl;
+  std::cout << "Expected = [0.000, 0.006, -0.018]" << std::endl;
+}
 
 int main()
 {
-
+  testVelocity();
+  return 0;
   for (int numPanels = 3; numPanels < 500; numPanels += 10) {
     Eigen::Matrix3d rotation;
     Eigen::VectorXd gamma_old;
@@ -122,12 +157,11 @@ int main()
     // auto force = Eigen::Vector3d::Zero();
 
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
-     const auto LE =  wing.getPanelVortexLine(i, 2);
-     const auto dx = LE.second - LE.first;
-    //  force += gamma[i] * dx.cross(wing.normals[i]);
+      const auto LE = wing.getPanelVortexLine(i, 2);
+      const auto dx = LE.second - LE.first;
+      //  force += gamma[i] * dx.cross(wing.normals[i]);
     }
     // std::cout << "Force = " << force.transpose() << std::endl;
-
   }
   return 0;
 }
