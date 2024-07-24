@@ -114,5 +114,5 @@ add_subdirectory(thirdparty/matplotplusplus)
 
 add_executable(UVLM src/main.cpp)
 target_compile_options(UVLM PRIVATE ${COMPILER_FLAGS})
-target_link_libraries(UVLM PRIVATE Eigen3::Eigen) 
+target_link_libraries(UVLM PRIVATE Eigen3::Eigen Matplot++::matplot) 
 

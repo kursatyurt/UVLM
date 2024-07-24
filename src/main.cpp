@@ -2,6 +2,7 @@
 #include <Eigen/Geometry>
 #include <iostream>
 #include <vector>
+#include <cassert>
 
 // #include <matplot/matplot.h>
 
@@ -118,14 +119,14 @@ int main()
     std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
     std::cout << "Angle = " << angle << " lift " << std::endl;
 
-    auto force = Eigen::Vector3d::Zero();
+    // auto force = Eigen::Vector3d::Zero();
 
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
      const auto LE =  wing.getPanelVortexLine(i, 2);
      const auto dx = LE.second - LE.first;
-     force += gamma[i] * dx.cross(wing.normals[i]);
+    //  force += gamma[i] * dx.cross(wing.normals[i]);
     }
-    std::cout << "Force = " << force.transpose() << std::endl;
+    // std::cout << "Force = " << force.transpose() << std::endl;
 
   }
   return 0;
