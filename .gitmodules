@@ -4,3 +4,6 @@
 [submodule "thirdparty/matplotplusplus"]
 	path = thirdparty/matplotplusplus
 	url = git@github.com:alandefreitas/matplotplusplus.git
+[submodule "thirdparty/VORTEX"]
+	path = thirdparty/VORTEX
+	url = git@github.com:kursatyurt/VORTEX.git

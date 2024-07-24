@@ -2,9 +2,8 @@
 #include <Eigen/Geometry>
 #include <cassert>
 #include <iostream>
+#include <matplot/matplot.h>
 #include <vector>
-
-// #include <matplot/matplot.h>
 
 Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const Eigen::Vector3d &> line, const Eigen::Vector3d &targetPoint)
 {
@@ -85,9 +84,9 @@ void testVelocity()
   std::cout << "Velocity = " << velocity.transpose() << std::endl;
   std::cout << "Expected = [-0.225, 0, 0]" << std::endl;
 
-  line = {Eigen::Vector3d{1.0, 0.0, 0.0}, Eigen::Vector3d{0.0, 1.0, 0.0}};
+  line        = {Eigen::Vector3d{1.0, 0.0, 0.0}, Eigen::Vector3d{0.0, 1.0, 0.0}};
   targetPoint = {0.0, 0.0, 1.0};
-  velocity = vortexLineUnitVelocity(line, targetPoint);
+  velocity    = vortexLineUnitVelocity(line, targetPoint);
   std::cout << "Velocity = " << velocity.transpose() << std::endl;
   std::cout << "Expected = [0.038, 0.038, 0.038]" << std::endl;
 
@@ -112,56 +111,61 @@ void testVelocity()
 
 int main()
 {
-  testVelocity();
-  return 0;
-  for (int numPanels = 3; numPanels < 500; numPanels += 10) {
-    Eigen::Matrix3d rotation;
-    Eigen::VectorXd gamma_old;
-    const double    angle = -5;
+  // testVelocity();
+  // return 0;
+  int             numPanels = 500;
+  Eigen::Matrix3d rotation;
+  Eigen::VectorXd gamma_old;
+  const double    angle = 5;
 
-    Wing wing;
+  Wing wing;
 
-    rotation = Eigen::AngleAxisd(deg2rad(angle), Eigen::Vector3d::UnitY());
+  rotation = Eigen::AngleAxisd(deg2rad(-angle), Eigen::Vector3d::UnitX()).toRotationMatrix();
 
-    for (int i = 0; i < numPanels; i++) {
-      wing.addVertexCouple(rotation * Eigen::Vector3d{i / 1.000, 0, 0}, rotation * Eigen::Vector3d{i / 1.000, 0.2, 0});
-    }
+  const double span  = 100000.0;
+  const double dx    = span / numPanels;
+  const double chord = 0.2;
 
-    Eigen::MatrixXd AIC = Eigen::MatrixXd::Zero(wing.getPanelCount(), wing.getPanelCount());
+  for (int i = 0; i < numPanels; i++) {
+    wing.addVertexCouple(rotation * Eigen::Vector3d{i * dx, 0, 0}, rotation * Eigen::Vector3d{i * dx, chord, 0});
+  }
 
-    wing.calculateTopology();
+  Eigen::MatrixXd AIC = Eigen::MatrixXd::Zero(wing.getPanelCount(), wing.getPanelCount());
 
-    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
-      for (unsigned j = 0; j < wing.getPanelCount(); j++) {
-        for (unsigned e = 0; e < 4; e++) {
-          AIC(i, j) += vortexLineUnitVelocity(wing.getPanelVortexLine(i, e), wing.controlPoints[j]).dot(wing.normals[j]);
-        }
+  wing.calculateTopology();
+
+  for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+    for (unsigned j = 0; j < wing.getPanelCount(); j++) {
+      for (unsigned e = 0; e < 4; e++) {
+        AIC(i, j) += vortexLineUnitVelocity(wing.getPanelVortexLine(i, e), wing.controlPoints[j]).dot(wing.normals[j]);
       }
     }
-
-    Eigen::VectorXd rhs;
-    rhs.resize(wing.getPanelCount());
-
-    Eigen::Vector3d freestreamVelocity(1, 0, 0);
-    for (unsigned i = 0; i < wing.getPanelCount(); i++)
-      rhs[i] = -freestreamVelocity.dot(wing.normals[i]);
-    //
-    Eigen::VectorXd gamma = AIC.fullPivLu().solve(rhs);
-
-    // matplot::plot(gamma);
-    // matplot::hold(matplot::on);
-    // matplot::show();
-    std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
-    std::cout << "Angle = " << angle << " lift " << std::endl;
-
-    // auto force = Eigen::Vector3d::Zero();
-
-    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
-      const auto LE = wing.getPanelVortexLine(i, 2);
-      const auto dx = LE.second - LE.first;
-      //  force += gamma[i] * dx.cross(wing.normals[i]);
-    }
-    // std::cout << "Force = " << force.transpose() << std::endl;
   }
+
+
+  Eigen::VectorXd rhs;
+  rhs.resize(wing.getPanelCount());
+
+  Eigen::Vector3d freestreamVelocity(0, 1, 0);
+  for (unsigned i = 0; i < wing.getPanelCount(); i++)
+    rhs[i] = -freestreamVelocity.dot(wing.normals[i]);
+  //
+  Eigen::VectorXd gamma = AIC.fullPivLu().solve(rhs);
+
+  // matplot::plot(gamma);
+  // matplot::hold(matplot::on);
+  // matplot::show();
+  std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
+  std::cout << "Angle = " << angle << " lift " << std::endl;
+
+  Eigen::Vector3d force = Eigen::Vector3d::Zero();
+
+  for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+    const auto LE  = wing.getPanelVortexLine(i, 2);
+    const auto dxx = LE.second - LE.first;
+    force += gamma[i] * freestreamVelocity.cross(dxx);
+  }
+  std::cout << "Force = " << force.transpose() << std::endl;
+
   return 0;
 }
