@@ -111,8 +111,9 @@ message(STATUS "CMake module path: ${CMAKE_MODULE_PATH}")
 
 add_subdirectory(thirdparty/eigen)
 add_subdirectory(thirdparty/matplotplusplus)
+add_subdirectory(thirdparty/VORTEX)
 
 add_executable(UVLM src/main.cpp)
 target_compile_options(UVLM PRIVATE ${COMPILER_FLAGS})
-target_link_libraries(UVLM PRIVATE Eigen3::Eigen Matplot++::matplot) 
+target_link_libraries(UVLM PRIVATE Eigen3::Eigen Matplot++::matplot Kokkos::kokkos) 
 
