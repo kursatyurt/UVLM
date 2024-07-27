@@ -116,13 +116,11 @@ int main(int argc, char **argv)
 {
   // testVelocity();
   // return 0;
-  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::Euler, Vortex::Inviscid, Vortex::cVPM, Vortex::Transposed> FMMCalculator;
+  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK3, Vortex::PSE, Vortex::rVPM, Vortex::Transposed> FMMCalculator;
 
   Kokkos::ScopeGuard           guard(argc, argv);
   FMMCalculator                fmmCalculator;
-  static const Eigen::Vector3d freestreamVelocity(0, 1, 0);
-
-  static const int numPanels = 51;
+  static const Eigen::Vector3d freestreamVelocity(0, 1.0, 0);
 
   exafmm::Bodies particles;
 
@@ -133,7 +131,7 @@ int main(int argc, char **argv)
     file << "vtk output\n";
     file << "ASCII\n";
     file << "DATASET POLYDATA\n";
-    file << "POINTS " << particles.size() << " float\n";
+    file << "POINTS " << particles.size() << " double\n";
     for (size_t b = 0; b < particles.size(); b++) {
       file << particles[b].X[0] << " " << particles[b].X[1] << " " << particles[b].X[2] << "\n";
     }
@@ -145,19 +143,19 @@ int main(int argc, char **argv)
     file << "POINT_DATA " << particles.size() << "\n";
 
     // Add alpha vectors
-    file << "VECTORS alpha float\n";
+    file << "VECTORS alpha double\n";
     for (const auto &body : particles) {
       file << body.alpha[0] << " " << body.alpha[1] << " " << body.alpha[2] << "\n";
     }
 
     // Add velocity vectors
-    file << "VECTORS velocity float\n";
+    file << "VECTORS velocity double\n";
     for (const auto &body : particles) {
       file << body.velocity[0] << " " << body.velocity[1] << " " << body.velocity[2] << "\n";
     }
 
     // Add radius scalars
-    file << "SCALARS radius float\n";
+    file << "SCALARS radius double\n";
     file << "LOOKUP_TABLE default\n";
     for (const auto &body : particles) {
       file << body.radius << "\n";
@@ -165,12 +163,13 @@ int main(int argc, char **argv)
     file.close();
   };
 
-  const double dt = 0.01;
+  const double     dt        = 0.1;
+  static const int numPanels = 1001;
 
   for (int time = 0; time < 10000; time++) {
     Eigen::Matrix3d rotation;
     Eigen::VectorXd gamma_old;
-    const double    angle = 5;
+    const double    angle = 10;
 
     Wing wing;
 
@@ -178,7 +177,7 @@ int main(int argc, char **argv)
 
     const double span  = 10.0;
     const double dx    = span / numPanels;
-    const double chord = 0.2;
+    const double chord = 0.1;
 
     for (int i = 0; i < numPanels; i++) {
       wing.addVertexCouple(rotation * Eigen::Vector3d{i * dx, 0, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{i * dx, chord, 0} - dt * time * freestreamVelocity);
@@ -200,9 +199,6 @@ int main(int argc, char **argv)
     if (time > 0) {
       fmmCalculator.getSensorData(sensors);
     }
-    // for (auto sensor : sensors) {
-    // std::cout << "Sensor " << sensor.X[0] << " " << sensor.X[1] << " " << sensor.X[2] << " " << sensor.velocity[0] << " " << sensor.velocity[1] << " " << sensor.velocity[2] << std::endl;
-    // }
 
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
       for (unsigned j = 0; j < wing.getPanelCount(); j++) {
@@ -241,14 +237,28 @@ int main(int argc, char **argv)
       const Eigen::Vector3d dxx      = TE.second - TE.first;
       const Eigen::Vector3d midpoint = (TE.first + TE.second) / 2.0;
       exafmm::Body          particle;
-      particle.X[0] = midpoint[0];
-      particle.X[1] = midpoint[1];
-      particle.X[2] = midpoint[2];
-      particle.alpha[0] = dxx[0] *gamma[p];
-      particle.alpha[1] = dxx[1] *gamma[p];
-      particle.alpha[2] = dxx[2] *gamma[p];
+      particle.X[0]     = midpoint[0] + freestreamVelocity[0] * dt;
+      particle.X[1]     = midpoint[1] + freestreamVelocity[1] * dt;
+      particle.X[2]     = midpoint[2] + freestreamVelocity[1] * dt;
+      particle.alpha[0] = dxx[0] * gamma[p];
+      particle.alpha[1] = dxx[1] * gamma[p];
+      particle.alpha[2] = dxx[2] * gamma[p];
       //
       particle.radius = dxx.norm() * 2.5;
+      if (p > 0) {
+        const auto            left = wing.getPanelVortexLine(p, 1);
+        const Eigen::Vector3d dxx2 = left.second - left.first;
+        particle.alpha[0] += dxx2[0] * (gamma[p] - gamma[p - 1]) * 0.5;
+        particle.alpha[1] += dxx2[1] * (gamma[p] - gamma[p - 1]) * 0.5;
+        particle.alpha[2] += dxx2[2] * (gamma[p] - gamma[p - 1]) * 0.5;
+      }
+      if (p < wing.getPanelCount() - 1) {
+        const auto            right = wing.getPanelVortexLine(p, 3);
+        const Eigen::Vector3d dxx3  = right.second - right.first;
+        particle.alpha[0] += dxx3[0] * (gamma[p] - gamma[p + 1]) * 0.5;
+        particle.alpha[1] += dxx3[1] * (gamma[p] - gamma[p + 1]) * 0.5;
+        particle.alpha[2] += dxx3[2] * (gamma[p] - gamma[p + 1]) * 0.5;
+      }
       if (p == 0) {
         const auto            left = wing.getPanelVortexLine(p, 1);
         const Eigen::Vector3d dxx2 = left.second - left.first;
@@ -257,7 +267,6 @@ int main(int argc, char **argv)
         particle.alpha[2] += dxx2[2] * gamma[p];
       }
       if (p == wing.getPanelCount() - 1) {
-        // std::cout << "Last panel" << std::endl;
         const auto            right = wing.getPanelVortexLine(p, 3);
         const Eigen::Vector3d dxx2  = right.second - right.first;
         particle.alpha[0] += dxx2[0] * gamma[p];
