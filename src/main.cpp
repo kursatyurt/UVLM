@@ -116,11 +116,11 @@ int main(int argc, char **argv)
 {
   // testVelocity();
   // return 0;
-  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK3, Vortex::PSE, Vortex::rVPM, Vortex::Transposed> FMMCalculator;
+  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK3, Vortex::Inviscid, Vortex::cVPM, Vortex::Transposed> FMMCalculator;
 
   Kokkos::ScopeGuard           guard(argc, argv);
   FMMCalculator                fmmCalculator;
-  static const Eigen::Vector3d freestreamVelocity(0, 1.0, 0);
+  static const Eigen::Vector3d freestreamVelocity(0, 1.0, 0.0);
 
   exafmm::Bodies particles;
 
@@ -163,13 +163,13 @@ int main(int argc, char **argv)
     file.close();
   };
 
-  const double     dt        = 0.1;
-  static const int numPanels = 1001;
+  const double     dt        = 0.05;
+  static const int numPanels = 501;
 
-  for (int time = 0; time < 10000; time++) {
+  for (int time = 0; time < 1; time++) {
     Eigen::Matrix3d rotation;
     Eigen::VectorXd gamma_old;
-    const double    angle = 10;
+    const double    angle = 20;
 
     Wing wing;
 
@@ -216,10 +216,8 @@ int main(int argc, char **argv)
     //
     Eigen::VectorXd gamma = AIC.fullPivLu().solve(rhs);
 
-    // matplot::plot(gamma);
-    // matplot::hold(matplot::on);
-    // matplot::show();
     std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
+    std::cout << "Minimum GAMMA " << gamma.minCoeff() << std::endl;
     std::cout << "Angle = " << angle << " lift " << std::endl;
 
     Eigen::Vector3d force = Eigen::Vector3d::Zero();
@@ -227,7 +225,21 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
       const auto LE  = wing.getPanelVortexLine(i, 2);
       const auto dxx = LE.second - LE.first;
-      force += gamma[i] * freestreamVelocity.cross(dxx);
+      // Induced velocities are required? 
+      Eigen::Vector3d pointVelocity = Eigen::Vector3d::Zero();
+      for (unsigned j = 0; j < wing.getPanelCount(); j++) {
+        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 0), wing.controlPoints[i]) * gamma[j];
+        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 1), wing.controlPoints[i]) * gamma[j];
+        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 2), wing.controlPoints[i]) * gamma[j];
+        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 3), wing.controlPoints[i]) * gamma[j];
+      }
+      pointVelocity[0] += freestreamVelocity[0];
+      pointVelocity[1] += freestreamVelocity[1];
+      pointVelocity[2] += freestreamVelocity[2];
+      pointVelocity[0] += sensors[i].velocity[0];
+      pointVelocity[1] += sensors[i].velocity[1];
+      pointVelocity[2] += sensors[i].velocity[2];
+      force += gamma[i] * pointVelocity.cross(dxx);
     }
     std::cout << "Force = " << force.transpose() << std::endl;
 
