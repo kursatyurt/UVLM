@@ -287,7 +287,7 @@ int main(int argc, char **argv)
       exafmm::Body          particle;
       particle.X[0] = midpoint[0] + freestreamVelocity[0] * dt;
       particle.X[1] = midpoint[1] + freestreamVelocity[1] * dt;
-      particle.X[2] = midpoint[2] + freestreamVelocity[1] * dt;
+      particle.X[2] = midpoint[2] + freestreamVelocity[2] * dt;
       particle.alpha[0] = dxx[0] * (gamma[p]-gamma_old[p]);
       particle.alpha[1] = dxx[1] * (gamma[p]-gamma_old[p]);
       particle.alpha[2] = dxx[2] * (gamma[p]-gamma_old[p]);
