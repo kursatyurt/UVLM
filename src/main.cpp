@@ -10,18 +10,22 @@
 
 Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const Eigen::Vector3d &> line, const Eigen::Vector3d &targetPoint)
 {
-  // Calculate the Biot-Savart Law for a unit vortex line
-  const Eigen::Vector3d r1 = targetPoint - line.first;
-  const Eigen::Vector3d r2 = targetPoint - line.second;
-  const Eigen::Vector3d r0 = line.second - line.first;
-
-  // Check singularity condition
-  if (r1.norm() < 1e-6 || r2.norm() < 1e-6 || r1.cross(r2).norm() < 1e-6) {
-    std::exit(1);
+  // see Katz and Plotkin p.255
+  Eigen::Vector3d     r0     = line.second - line.first;
+  Eigen::Vector3d     r1     = targetPoint - line.first;
+  Eigen::Vector3d     r2     = targetPoint - line.second;
+  Eigen::Vector3d     d      = r1.cross(r2);
+  double              d_len  = d.norm();
+  double              r1_len = r1.norm();
+  double              r2_len = r2.norm();
+  static const double eps    = 1e-10; // cut off length
+  if (d_len * d_len < eps || r1_len < eps || r2_len < eps) {
+    return Eigen::Vector3d::Zero();
   }
+  const double K = 1. / 4. / M_PI / d.squaredNorm() *
+                   r0.dot(r1 / r1.norm() - r2 / r2.norm());
 
-  // Calculate the induced velocity
-  return 0.25 / M_PI * r1.cross(r2) / (r1.cross(r2).squaredNorm()) * (r0.dot((r1 / r1.norm() - r2 / r2.norm())));
+  return K * d;
 }
 
 struct Wing {
@@ -52,7 +56,7 @@ struct Wing {
       controlPoints[i]   = (LE_Vertices[i] + LE_Vertices[i + 1] + TE_Vertices[i] + TE_Vertices[i + 1]) / 4.0;
       Eigen::Vector3d v1 = LE_Vertices[i + 1] - TE_Vertices[i];
       Eigen::Vector3d v2 = LE_Vertices[i] - TE_Vertices[i + 1];
-      normals[i]         = v1.cross(v2);
+      normals[i]         = v2.cross(v1);
       areas[i]           = 0.5 * normals[i].norm();
       normals[i].normalize();
     }
@@ -114,13 +118,14 @@ void testVelocity()
 
 int main(int argc, char **argv)
 {
-  // testVelocity();
+  testVelocity();
   // return 0;
   typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK3, Vortex::Inviscid, Vortex::cVPM, Vortex::Transposed> FMMCalculator;
 
   Kokkos::ScopeGuard           guard(argc, argv);
   FMMCalculator                fmmCalculator;
-  static const Eigen::Vector3d freestreamVelocity(0, 1.0, 0.0);
+  static const Eigen::Vector3d freestreamVelocity(0.0, 1.0, 0.0);
+
 
   exafmm::Bodies particles;
 
@@ -163,27 +168,36 @@ int main(int argc, char **argv)
     file.close();
   };
 
-  const double     dt        = 0.05;
-  static const int numPanels = 501;
+  const double     dt        = 0.001;
+  static const int numPanels = 201;
 
-  for (int time = 0; time < 1; time++) {
+  for (int time = 0; time < 100000; time++) {
     Eigen::Matrix3d rotation;
     Eigen::VectorXd gamma_old;
-    const double    angle = 20;
+    const double    angle = 10;
 
     Wing wing;
 
     rotation = Eigen::AngleAxisd(deg2rad(-angle), Eigen::Vector3d::UnitX()).toRotationMatrix();
 
-    const double span  = 10.0;
+    const double span  = 2.0;
     const double dx    = span / numPanels;
     const double chord = 0.1;
 
-    for (int i = 0; i < numPanels; i++) {
+    for (int i = 0; i < numPanels+1; i++) {
       wing.addVertexCouple(rotation * Eigen::Vector3d{i * dx, 0, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{i * dx, chord, 0} - dt * time * freestreamVelocity);
     }
 
+    // for (const auto & vertex : wing.LE_Vertices) {
+    //   std::cout << "LE " << vertex.transpose() << std::endl;
+    // }
+    // for (const auto & vertex : wing.TE_Vertices) {
+    //   std::cout << "TE " << vertex.transpose() << std::endl;
+    // }
+
     Eigen::MatrixXd AIC = Eigen::MatrixXd::Zero(wing.getPanelCount(), wing.getPanelCount());
+
+    std::cout << "Time = " << time << std::endl;
 
     wing.calculateTopology();
 
@@ -198,15 +212,26 @@ int main(int argc, char **argv)
     }
     if (time > 0) {
       fmmCalculator.getSensorData(sensors);
+      int mid = sensors.size() / 2;
+      std::cout << "Induced Velocity " << sensors[mid].velocity[0] << " " << sensors[mid].velocity[1] << " " << sensors[mid].velocity[2] << std::endl;
     }
 
+    AIC.setZero(); // Ensure AIC is initialized properly
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
       for (unsigned j = 0; j < wing.getPanelCount(); j++) {
+        const Eigen::Vector3d &normal_j        = wing.normals[j];
+        const Eigen::Vector3d &control_point_j = wing.controlPoints[j];
+        // std::cout << "Control Point " << control_point_j.transpose() << std::endl;
         for (unsigned e = 0; e < 4; e++) {
-          AIC(i, j) += vortexLineUnitVelocity(wing.getPanelVortexLine(i, e), wing.controlPoints[j]).dot(wing.normals[j]);
+          auto            vortex_line      = wing.getPanelVortexLine(i, e);
+          Eigen::Vector3d induced_velocity = vortexLineUnitVelocity(vortex_line, control_point_j);
+          // std::cout << "Induced Velocity " << induced_velocity.transpose() << std::endl;
+          AIC(i, j) += induced_velocity.dot(normal_j);
         }
       }
     }
+    // std::cout << "AIC" << std::endl;
+    // std::cout << AIC << std::endl;
 
     Eigen::VectorXd rhs;
     rhs.resize(wing.getPanelCount());
@@ -214,21 +239,47 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < wing.getPanelCount(); i++)
       rhs[i] = -freestreamVelocity.dot(wing.normals[i]) - sensors[i].velocity[0] * wing.normals[i][0] - sensors[i].velocity[1] * wing.normals[i][1] - sensors[i].velocity[2] * wing.normals[i][2];
     //
-    Eigen::VectorXd gamma = AIC.fullPivLu().solve(rhs);
+    Eigen::MatrixXd AIC_inverse = AIC.inverse();
+    Eigen::VectorXd gamma = AIC_inverse * rhs;
+std::vector<double> inflow ;
+    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+      inflow.push_back(sensors[i].velocity[2]);
+    }
+
+    // plot in flow
+    // matplot::figure();
+    // matplot::plot(inflow);
+    // matplot::title("Inflow");
+    // matplot::xlabel("Panel ID");
+    // matplot::ylabel("Inflow");
+    // matplot::grid(true);
+    // matplot::show();
+
+
+    // matplot::figure();
+    matplot::plot(gamma);
+    matplot::title("Gamma");
+    matplot::xlabel("Panel ID");
+    matplot::ylabel("Gamma");
+    matplot::grid(true);
+    matplot::show();
 
     std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
     std::cout << "Minimum GAMMA " << gamma.minCoeff() << std::endl;
     std::cout << "Angle = " << angle << " lift " << std::endl;
+
+    Eigen::VectorXd aaa = AIC * gamma - rhs;
+    std::cout << "Residual = " << aaa.norm() << std::endl;
 
     Eigen::Vector3d force = Eigen::Vector3d::Zero();
 
     for (unsigned i = 0; i < wing.getPanelCount(); i++) {
       const auto LE  = wing.getPanelVortexLine(i, 2);
       const auto dxx = LE.second - LE.first;
-      // Induced velocities are required? 
+      // Induced velocities are required?
       Eigen::Vector3d pointVelocity = Eigen::Vector3d::Zero();
       for (unsigned j = 0; j < wing.getPanelCount(); j++) {
-        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 0), wing.controlPoints[i]) * gamma[j];
+        // pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 0), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 1), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 2), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 3), wing.controlPoints[i]) * gamma[j];
