@@ -297,7 +297,7 @@ int main(int argc, char **argv)
       //
       particle.radius = dxx.norm() * 2.5;
       if (p > 0) {
-        const auto            left = wing.getPanelVortexLine(p, 1);
+        const auto            left = wing.getPanelVortexLine(p, 3);
         const Eigen::Vector3d dxx2 = left.second - left.first;
         particle.alpha[0] += dxx2[0] * (gamma[p] - gamma[p - 1]) * 0.5;
         particle.alpha[1] += dxx2[1] * (gamma[p] - gamma[p - 1]) * 0.5;
