@@ -725,9 +725,13 @@ struct FMMCalculator {
 
   void getSensorData(exafmm::Bodies &sensors)
   {
+    for (auto i = 0ul; i < sensors.size(); i++){
+     sensors[i].id = i;
+    }
     initSensors(sensors);
     calculateSensorPoints();
     copySensors2Host(sensors);
+    std::sort(sensors.begin(), sensors.end(), [](const exafmm::Body &a, const exafmm::Body &b) { return a.id < b.id; });
   }
 
   void calculateVorticityDualTree()
@@ -862,7 +866,7 @@ struct FMMCalculator {
     // The vorticity data stored inside velocity_old here
     calculateVorticityDualTree();
     copySensors2Host(newPoints);
-    newPoints.erase(std::remove_if(newPoints.begin(), newPoints.end(), [](const auto &b) { return (std::abs(b.velocity_old[0]) < 1e-6) && (std::abs(b.velocity_old[1]) < 1e-6) && (std::abs(b.velocity_old[2]) < 1e-6); }), newPoints.end());
+    newPoints.erase(std::remove_if(newPoints.begin(), newPoints.end(), [](const auto &b) { return Kokkos::sqrt(b.velocity_old[0] * b.velocity_old[0] + b.velocity_old[1] * b.velocity_old[1] + b.velocity_old[2] * b.velocity_old[2]) < 0.5; }), newPoints.end());
     createSensorTree(sensorOnly(), newPoints);
     // Set the initial alpha values by vorticity * vol
     Kokkos::parallel_for("initAlphaValues", Kokkos::RangePolicy<Device, initAlphaValues>(Device(), 0, _sensorsView.extent(0)), *this);

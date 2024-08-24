@@ -29,6 +29,7 @@ struct Body {
   real_t drdt{0.0};            //!< Rate of change of radius
   real_t radius_old{0.0};      //!< Initial state storage for RK Schemes
   real_t drdt_old{0.0};        //!< Initial state storage for RK Schemes
+  unsigned id{0};       //!< Index of body
 };
 typedef std::vector<Body> Bodies; //!< Vector of bodies
 
