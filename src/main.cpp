@@ -62,7 +62,7 @@ struct Wing {
     }
   };
 
-  std::pair<const Eigen::Vector3d &, const Eigen::Vector3d &> getPanelVortexLine(const unsigned panelID, const unsigned lineID)
+  std::pair<const Eigen::Vector3d, const Eigen::Vector3d> getPanelVortexLine(const unsigned panelID, const unsigned lineID)
   {
     assert(lineID < 4);
     if (lineID == 0) {
@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 {
   // testVelocity();
   // return 0;
-  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK4, Vortex::PSE, Vortex::rVPM, Vortex::Transposed> FMMCalculator;
+  typedef Vortex::FMMCalculator<Kokkos::DefaultHostExecutionSpace, Kokkos::DefaultExecutionSpace, Vortex::RK3, Vortex::CSM, Vortex::rVPM, Vortex::Transposed> FMMCalculator;
 
   Kokkos::ScopeGuard guard(argc, argv);
   FMMCalculator      fmmCalculator;
