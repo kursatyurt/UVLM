@@ -8,7 +8,7 @@
 #include "fmmCalculator.hpp"
 #include "traverse.hpp"
 
-Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d &, const Eigen::Vector3d &> line, const Eigen::Vector3d &targetPoint)
+Eigen::Vector3d vortexLineUnitVelocity(std::pair<const Eigen::Vector3d, const Eigen::Vector3d> line, const Eigen::Vector3d &targetPoint)
 {
   // see Katz and Plotkin p.255
   Eigen::Vector3d     r0     = line.second - line.first;
@@ -169,8 +169,8 @@ int main(int argc, char **argv)
 
   static const Eigen::Vector3d freestreamVelocity(1.0, 0.0, 0.1);
 
-  static const int numPanels = 128;
-  const double     dt        = 5.0 / numPanels;
+  static const int numPanels = 1024;
+  const double     dt        = 5.0 / numPanels ;
 
   Eigen::VectorXd gamma_old;
   gamma_old.resize(numPanels);
@@ -193,7 +193,7 @@ int main(int argc, char **argv)
       // wing.addVertexCouple(rotation * Eigen::Vector3d{0, i * dx, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{chord, i * dx, 0} - dt * time * freestreamVelocity);
       // wing.addVertexCouple(rotation * Eigen::Vector3d{0, i * dx, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{std::max(0.0, chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity);
       wing.addVertexCouple(rotation * Eigen::Vector3d{std::min(-0.001 * chord, -chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{0, i * dx, 0} - dt * time * freestreamVelocity);
-      // wing.addVertexCouple(rotation * Eigen::Vector3d{0.25 * std::min(-0.01 * chord, -chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{0.75 * std::max(0.0, chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity);
+      // wing.addVertexCouple(rotation * Eigen::Vector3d{0.25 * std::min(-0.01 * chord, -chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity, rotation * Eigen::Vector3d{0.75 * std::max(0.01 * chord, chord * std::sqrt(1.0 - (2.0 * i * dx / span - 1.0) * (2.0 * i * dx / span - 1.0))), i * dx, 0} - dt * time * freestreamVelocity);
     }
 
     Eigen::MatrixXd AIC = Eigen::MatrixXd::Zero(wing.getPanelCount(), wing.getPanelCount());
@@ -217,37 +217,30 @@ int main(int argc, char **argv)
       std::cout << "Induced Velocity " << sensors[mid].velocity[0] << " " << sensors[mid].velocity[1] << " " << sensors[mid].velocity[2] << std::endl;
     }
 
-    // AIC.setZero(); // Ensure AIC is initialized properly
-    // for (unsigned i = 0; i < wing.getPanelCount(); i++) {
-    //   for (unsigned j = 0; j < wing.getPanelCount(); j++) {
-    //     const Eigen::Vector3d &normal_j        = wing.normals[j];
-    //     const Eigen::Vector3d &control_point_j = wing.controlPoints[j];
-    //     // std::cout << "Control Point " << control_point_j.transpose() << std::endl;
-    //     for (unsigned e = 1; e < 4; e++) {
-    //       // std::cout << e << std::endl;
-    //       auto            vortex_line      = wing.getPanelVortexLine(i, e);
-    //       Eigen::Vector3d induced_velocity = vortexLineUnitVelocity(vortex_line, control_point_j);
-    //       // std::cout << "Induced Velocity " << induced_velocity.transpose() << std::endl;
-    //       AIC(i, j) += induced_velocity.dot(normal_j);
-    //     }
-    //   }
-    // }
-    // // std::cout << "AIC" << std::endl;
-    // // std::cout << AIC << std::endl;
+    AIC.setZero();
+#pragma omp parallel for collapse(2)
+    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+      for (unsigned j = 0; j < wing.getPanelCount(); j++) {
+        const Eigen::Vector3d &normal_j         = wing.normals[j];
+        const Eigen::Vector3d &control_point_j  = wing.controlPoints[j];
+        Eigen::Vector3d        induced_velocity = vortexLineUnitVelocity(wing.getPanelVortexLine(i, 1), control_point_j) + vortexLineUnitVelocity(wing.getPanelVortexLine(i, 2), control_point_j) + vortexLineUnitVelocity(wing.getPanelVortexLine(i, 3), control_point_j);
+        AIC(i, j)                               = induced_velocity.dot(normal_j);
+      }
+    }
 
-    // Eigen::VectorXd rhs;
-    // rhs.resize(wing.getPanelCount());
+    Eigen::VectorXd rhs;
+    rhs.resize(wing.getPanelCount());
 
-    // for (unsigned i = 0; i < wing.getPanelCount(); i++) {
-    //   rhs[i] = -freestreamVelocity.dot(wing.normals[i]) - sensors[i].velocity[0] * wing.normals[i][0] - sensors[i].velocity[1] * wing.normals[i][1] - sensors[i].velocity[2] * wing.normals[i][2];
-    // }
-    // Eigen::MatrixXd AIC_inverse = AIC.inverse();
-    // Eigen::VectorXd gamma       = AIC_inverse * rhs;
+    for (unsigned i = 0; i < wing.getPanelCount(); i++) {
+      rhs[i] = -freestreamVelocity.dot(wing.normals[i]) - sensors[i].velocity[0] * wing.normals[i][0] - sensors[i].velocity[1] * wing.normals[i][1] - sensors[i].velocity[2] * wing.normals[i][2];
+    }
+    Eigen::MatrixXd AIC_inverse = AIC.inverse();
+    Eigen::VectorXd gamma       = AIC_inverse * rhs;
 
-    Eigen::VectorXd gamma;
-    gamma.resize(wing.getPanelCount());
+    Eigen::VectorXd gamma2;
+    gamma2.resize(wing.getPanelCount());
     for (auto i = 0ul; i < wing.getPanelCount(); i++) {
-      gamma[i] = -0.24 * std::sqrt(1.0 - (2.0 * wing.controlPoints[i][1] / span - 1.0) * (2.0 * wing.controlPoints[i][1] / span - 1.0));
+      gamma2[i] = -0.24 * std::sqrt(1.0 - (2.0 * wing.controlPoints[i][1] / span - 1.0) * (2.0 * wing.controlPoints[i][1] / span - 1.0));
     }
 
     std::vector<double> inflow;
@@ -255,16 +248,16 @@ int main(int argc, char **argv)
       inflow.push_back(sensors[i].velocity[2]);
     }
 
-    // matplot::cla();
-    // matplot::hold(matplot::on);
-    // matplot::plot(inflow);
-    // // matplot::plot(gamma2);
-    // matplot::title("Gamma");
-    // matplot::xlabel("Panel ID");
-    // matplot::ylabel("Gamma");
-    // matplot::grid(true);
-    // matplot::hold(matplot::off);
-    // matplot::save("circulation" +std::to_string(time)+".png");
+    matplot::cla();
+    matplot::hold(matplot::on);
+    matplot::plot(gamma);
+    matplot::plot(gamma2);
+    matplot::title("Gamma");
+    matplot::xlabel("Panel ID");
+    matplot::ylabel("Gamma");
+    matplot::grid(true);
+    matplot::hold(matplot::off);
+    matplot::save("circulation" + std::to_string(time) + ".png");
     // matplot::show();
 
     std::cout << "Maximum GAMMA " << gamma.maxCoeff() << std::endl;
@@ -281,8 +274,8 @@ int main(int argc, char **argv)
       const auto dxx = LE.second - LE.first;
       // Induced velocities are required?
       Eigen::Vector3d pointVelocity = Eigen::Vector3d::Zero();
-      for (unsigned j = 0; j < wing.getPanelCount(); j++) {
-        pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 0), wing.controlPoints[i]) * gamma[j];
+      for (unsigned j = 1; j < wing.getPanelCount(); j++) {
+        // pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 0), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 1), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 2), wing.controlPoints[i]) * gamma[j];
         pointVelocity += vortexLineUnitVelocity(wing.getPanelVortexLine(j, 3), wing.controlPoints[i]) * gamma[j];
@@ -343,48 +336,72 @@ int main(int argc, char **argv)
     //   }
     // }
 
+    // for (auto p = 0ul; p < wing.getPanelCount(); p++) {
+    //   // Get TE line
+    //   const auto            TE       = wing.getPanelVortexLine(p, 0);
+    //   const Eigen::Vector3d dxx      = TE.second - TE.first;
+    //   const Eigen::Vector3d midpoint = (TE.first + TE.second) / 2.0;
+    //   exafmm::Body          particle;
+    //   particle.X[0]              = midpoint[0] + 0.5 * freestreamVelocity[0] * dt;
+    //   particle.X[1]              = midpoint[1] + 0.5 * freestreamVelocity[1] * dt;
+    //   particle.X[2]              = midpoint[2] + 0.5 * freestreamVelocity[2] * dt;
+    //   particle.alpha[0]          = dxx[0] * (gamma[p] - gamma_old[p]);
+    //   particle.alpha[1]          = dxx[1] * (gamma[p] - gamma_old[p]);
+    //   particle.alpha[2]          = dxx[2] * (gamma[p] - gamma_old[p]);
+    //   const Eigen::Vector3d dxx2 = freestreamVelocity * dt;
+    //   particle.radius            = std::max(dxx.norm(), dxx2.norm()) * 2.5;
+    //   particles.push_back(particle);
+    // }
+    // particle.alpha[0] = 0;
+    // particle.alpha[1] = 0;
+    // particle.alpha[2] = 0;
     for (auto p = 0ul; p < wing.getPanelCount(); p++) {
-      // Get TE line
-      const auto            TE       = wing.getPanelVortexLine(p, 0);
-      const Eigen::Vector3d dxx      = TE.second - TE.first;
-      const Eigen::Vector3d midpoint = (TE.first + TE.second) / 2.0;
-      exafmm::Body          particle;
-      particle.X[0]     = midpoint[0] + 0.5 * freestreamVelocity[0] * dt;
-      particle.X[1]     = midpoint[1] + 0.5 * freestreamVelocity[1] * dt;
-      particle.X[2]     = midpoint[2] + 0.5 * freestreamVelocity[2] * dt;
-      particle.alpha[0] = dxx[0] * (gamma[p] - gamma_old[p]);
-      particle.alpha[1] = dxx[1] * (gamma[p] - gamma_old[p]);
-      particle.alpha[2] = dxx[2] * (gamma[p] - gamma_old[p]);
-      particle.alpha[0] = 0;
-      particle.alpha[1] = 0;
-      particle.alpha[2] = 0;
-
+      exafmm::Body particle;
+      const auto   TE            = wing.getPanelVortexLine(p, 0);
+      particle.X[0]              = TE.first[0] + 0.5 * freestreamVelocity[0] * dt;
+      particle.X[1]              = TE.first[1] + 0.5 * freestreamVelocity[1] * dt;
+      particle.X[2]              = TE.first[2] + 0.5 * freestreamVelocity[2] * dt;
+      const Eigen::Vector3d dxx  = TE.second - TE.first;
       const Eigen::Vector3d dxx2 = freestreamVelocity * dt;
-
-      particle.radius = std::max(dxx.norm(), dxx2.norm());
-      if (p > 0) {
-        particle.alpha[0] += dxx2[0] * (gamma[p] - gamma[p - 1]);
-        particle.alpha[1] += dxx2[1] * (gamma[p] - gamma[p - 1]);
-        particle.alpha[2] += dxx2[2] * (gamma[p] - gamma[p - 1]);
-      }
-      if (p < wing.getPanelCount() - 1) {
-        particle.alpha[0] -= dxx2[0] * (gamma[p] - gamma[p + 1]);
-        particle.alpha[1] -= dxx2[1] * (gamma[p] - gamma[p + 1]);
-        particle.alpha[2] -= dxx2[2] * (gamma[p] - gamma[p + 1]);
-      }
+      particle.radius            = std::max(dxx.norm(), dxx2.norm()) * 2.5;
       if (p == 0) {
         particle.alpha[0] += dxx2[0] * gamma[p];
         particle.alpha[1] += dxx2[1] * gamma[p];
         particle.alpha[2] += dxx2[2] * gamma[p];
-      }
-      if (p == wing.getPanelCount() - 1) {
-        particle.alpha[0] -= dxx2[0] * gamma[p];
-        particle.alpha[1] -= dxx2[1] * gamma[p];
-        particle.alpha[2] -= dxx2[2] * gamma[p];
+      } else {
+        particle.alpha[0] += dxx2[0] * (gamma[p] - gamma[p - 1]);
+        particle.alpha[1] += dxx2[1] * (gamma[p] - gamma[p - 1]);
+        particle.alpha[2] += dxx2[2] * (gamma[p] - gamma[p - 1]);
       }
       particles.push_back(particle);
     }
+    {
+      auto         p = wing.getPanelCount() - 1;
+      exafmm::Body particle;
+      const auto   TE            = wing.getPanelVortexLine(p, 0);
+      particle.X[0]              = TE.second[0] + 0.5 * freestreamVelocity[0] * dt;
+      particle.X[1]              = TE.second[1] + 0.5 * freestreamVelocity[1] * dt;
+      particle.X[2]              = TE.second[2] + 0.5 * freestreamVelocity[2] * dt;
+      const Eigen::Vector3d dxx  = TE.second - TE.first;
+      const Eigen::Vector3d dxx2 = freestreamVelocity * dt;
+      particle.radius            = std::max(dxx.norm(), dxx2.norm()) * 2.5;
+      particle.alpha[0] -= dxx2[0] * gamma[p];
+      particle.alpha[1] -= dxx2[1] * gamma[p];
+      particle.alpha[2] -= dxx2[2] * gamma[p];
+      particles.push_back(particle);
+    }
+
     gamma_old = gamma;
+
+    // if (time % 10 == 0) {
+    //   auto newParticles = particles;
+    //   std::remove_if(newParticles.begin(), newParticles.end(), [](const exafmm::Body &body) { return std::sqrt(body.alpha[0] * body.alpha[0] + body.alpha[1] * body.alpha[1] + body.alpha[2] * body.alpha[2]) < 1.0e-4; });
+    //   for (auto &particle : newParticles) {
+    //     particle.radius = (freestreamVelocity * dt).norm() * 2.5;
+    //   }
+    //   fmmCalculator.RBF(particles, newParticles);
+    //   particles = newParticles;
+    // }
     if (time % 10 == 0) {
       writeTovtk(time);
     }
